@@ -32,7 +32,7 @@ pub fn compile(root: NodeRoot) -> String {
                 let name = &tokens.first().unwrap().value;
                 let value = &tokens.get(2).unwrap().value;
 
-                data_buffer.push_str(format!("    {} db {}\n", name, value).as_str());
+                data_buffer.push_str(format!("    {} dq {}\n", name, value).as_str());
                 vars.push(name.to_string());
             }
         }
