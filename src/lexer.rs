@@ -6,6 +6,8 @@ pub enum TokenType {
     Identifer,
     Number,
     Operator,
+    Plus,
+    SemiColon,
     Exit,
     Let,
 }
@@ -25,15 +27,15 @@ impl Lexer {
         let mut token = Token::default();
 
         for char in text.chars() {
-            if char.is_numeric() {
-                if token.value.is_empty() {
-                    token.token_type = TokenType::Number;
+            if char.is_alphabetic() {
+                if token.token_type == TokenType::Number {
+                    panic!("An identifer / keyword cannot start with a number.");
                 }
 
                 token.value.push(char);
-            } else if char.is_alphabetic() {
-                if token.token_type == TokenType::Number {
-                    panic!("An identifer / keyword cannot start with a number.");
+            } else if char.is_numeric() {
+                if token.value.is_empty() {
+                    token.token_type = TokenType::Number;
                 }
 
                 token.value.push(char);
@@ -46,7 +48,19 @@ impl Lexer {
                     token.token_type = TokenType::Operator;
                 }
 
+                if char == '+' {
+                    token.token_type = TokenType::Plus;
+                }
+
                 token.value.push(char);
+            } else if char == ';' {
+                self.push_token(token, tokens.borrow_mut());
+                token = Token::default();
+
+                tokens.push(Token {
+                    token_type: TokenType::SemiColon,
+                    value: ';'.to_string(),
+                });
             } else {
                 self.push_token(token, tokens.borrow_mut());
                 token = Token::default();

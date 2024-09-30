@@ -4,6 +4,7 @@ use std::{
 };
 
 use clap::{command, Parser as ClapParser};
+use compiler::Compiler;
 use lexer::Lexer;
 use parser::Parser;
 
@@ -36,10 +37,11 @@ fn main() {
     let lexer = Lexer::default();
     let tokens = lexer.tokenize(text);
 
-    let mut parser = Parser::default();
+    let parser = Parser::default();
     let root_node = parser.parse(tokens);
 
-    let asm = compiler::compile(root_node);
+    let compiler = Compiler::default();
+    let asm = compiler.compile(root_node);
     write(format!("{}.asm", args.output_path), asm).unwrap();
 
     if !args.no_assemble {
