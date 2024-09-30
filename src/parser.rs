@@ -1,43 +1,54 @@
 use crate::lexer::{Token, TokenType};
 
-#[derive(Default)]
-pub struct NodeExpr {
-    pub token: Token
+pub enum NodeExprs {
+    NodeExprExit(Vec<Token>),
+}
+
+impl Default for NodeExprs {
+    fn default() -> Self {
+        NodeExprs::NodeExprExit(Vec::default())
+    }
 }
 
 #[derive(Default)]
-pub struct NodeExit {
-    pub expr: NodeExpr,
+pub struct NodeStmt {
+    pub expr: NodeExprs,
+    // pub token: Token,
+}
+
+#[derive(Default)]
+pub struct NodeRoot {
+    pub stmt: NodeStmt,
 }
 
 #[derive(Default)]
 pub struct Parser {}
 
 impl Parser {
-    fn parse_expr(
-        &self,
-        iter: &mut std::vec::IntoIter<Token>,
-    ) -> NodeExpr {
+    fn parse_expr(&self, current_token: &Token, iter: &mut std::vec::IntoIter<Token>) -> NodeExprs {
         let next_token = iter.next().expect("Expected token after expression!");
 
-        if next_token.token_type == TokenType::Number || next_token.token_type == TokenType::Identifer {
-            return NodeExpr { token: next_token };
+        if current_token.token_type == TokenType::Exit && next_token.token_type == TokenType::Number
+        {
+            NodeExprs::NodeExprExit(vec![next_token])
         } else {
             panic!("Expected valid number in expression!");
         }
     }
 
-    pub fn parse(&self, tokens: Vec<Token>) -> NodeExit {
-        let mut exit_node = NodeExit::default();
+    pub fn parse(&self, tokens: Vec<Token>) -> NodeRoot {
+        let mut root = NodeRoot::default();
+        let mut root_stmt = NodeStmt::default();
 
         let mut iter = tokens.into_iter();
         while let Some(token) = iter.next() {
-            if token.token_type == TokenType::Keyword && token.value == "exit" {
-                let expr_node = self.parse_expr(&mut iter);
-                exit_node.expr = expr_node;
+            if token.token_type == TokenType::Exit {
+                let expr_node: NodeExprs = self.parse_expr(&token, &mut iter);
+                root_stmt.expr = expr_node
             }
         }
 
-        exit_node
+        root.stmt = root_stmt;
+        root
     }
 }

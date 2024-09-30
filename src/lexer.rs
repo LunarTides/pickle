@@ -1,13 +1,11 @@
 use std::borrow::BorrowMut;
 
-const KEYWORDS: &[&str] = &["exit"];
-
 #[derive(Default, PartialEq, Clone, Copy)]
 pub enum TokenType {
     #[default]
     Identifer,
-    Keyword,
     Number,
+    Exit,
 }
 
 #[derive(Default, Clone)]
@@ -51,8 +49,8 @@ impl Lexer {
     }
 
     fn push_token(&self, mut token: Token, tokens: &mut Vec<Token>) {
-        if KEYWORDS.contains(&token.value.as_str()) {
-            token.token_type = TokenType::Keyword;
+        if token.value.as_str() == "exit" {
+            token.token_type = TokenType::Exit;
         }
 
         tokens.push(token);
