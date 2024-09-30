@@ -1,1 +1,3 @@
-exit(69);
+let num = 69;
+
+exit(num);

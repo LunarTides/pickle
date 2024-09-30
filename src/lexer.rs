@@ -1,11 +1,13 @@
 use std::borrow::BorrowMut;
 
-#[derive(Default, PartialEq, Clone, Copy)]
+#[derive(Default, PartialEq, Clone, Copy, Debug)]
 pub enum TokenType {
     #[default]
     Identifer,
     Number,
+    Operator,
     Exit,
+    Let,
 }
 
 #[derive(Default, Clone)]
@@ -35,23 +37,37 @@ impl Lexer {
                 }
 
                 token.value.push(char);
+            } else if ['=', '+', '-', '*', '/'].contains(&char) {
+                if char == '=' && token.value.len() > 1 {
+                    panic!("Invalid use of '='");
+                }
+
+                if char == '=' || token.value.is_empty() {
+                    token.token_type = TokenType::Operator;
+                }
+
+                token.value.push(char);
             } else {
                 self.push_token(token, tokens.borrow_mut());
                 token = Token::default();
             }
         }
 
-        if !token.value.is_empty() {
-            self.push_token(token, tokens.borrow_mut());
-        }
+        self.push_token(token, tokens.borrow_mut());
 
         tokens
     }
 
     fn push_token(&self, mut token: Token, tokens: &mut Vec<Token>) {
-        if token.value.as_str() == "exit" {
-            token.token_type = TokenType::Exit;
+        if token.value.is_empty() {
+            return;
         }
+
+        token.token_type = match token.value.to_lowercase().as_str() {
+            "exit" => TokenType::Exit,
+            "let" => TokenType::Let,
+            _ => token.token_type,
+        };
 
         tokens.push(token);
     }
