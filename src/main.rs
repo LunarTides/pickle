@@ -53,7 +53,7 @@ fn main() {
             .status()
             .unwrap();
 
-        Command::new("ld")
+        Command::new("mold")
             .args([
                 format!("{}.o", args.output_path).as_str(),
                 "-o",
