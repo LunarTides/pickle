@@ -1,11 +1,11 @@
-use crate::lexer::{Token, TokenType};
+use crate::lexer::{KeywordType, Token, TokenType};
 
 #[derive(Clone)]
 pub enum Expression {
     Exit(Vec<Token>),
     Let(Token, Box<Expression>),
     Number(Token),
-    Add(Vec<Token>),
+    BinOp(Box<Expression>, Token, Box<Expression>),
 }
 
 impl Default for Expression {
@@ -33,8 +33,48 @@ pub struct Parser {
 
 impl Parser {
     fn parse_expr(&mut self, current_token: &Token) -> Option<Expression> {
-        match current_token.token_type {
-            TokenType::Exit => {
+        // TokenType
+        let mut return_value = match current_token.token_type {
+            TokenType::Number => {
+                if let Some(next_token) = self.peek(1).cloned() {
+                    if next_token.token_type == TokenType::Operator {
+                        let next_number = self
+                            .consume(2)
+                            .expect("Expected number after operator.")
+                            .clone();
+
+                        if next_number.token_type != TokenType::Number {
+                            panic!("Expected number after operator.");
+                        }
+
+                        let next_expr = self
+                            .parse_expr(&next_number)
+                            .expect("Expected number after operator.");
+
+                        return Some(Expression::BinOp(
+                            Box::new(next_expr),
+                            next_token.clone(),
+                            Box::new(Expression::Number(current_token.clone())),
+                        ));
+                    }
+                }
+
+                Some(Expression::Number(current_token.clone()))
+            }
+
+            TokenType::Identifer
+            | TokenType::Keyword
+            | TokenType::Operator
+            | TokenType::SemiColon => None,
+        };
+
+        if return_value.is_some() {
+            return return_value;
+        }
+
+        // KeywordType
+        return_value = match current_token.keyword_type {
+            Some(KeywordType::Exit) => {
                 let exit_code = self
                     .consume(1)
                     .expect("Expected number or identifier after `exit`.")
@@ -52,7 +92,7 @@ impl Parser {
 
                 Some(Expression::Exit(vec![exit_code]))
             }
-            TokenType::Let => {
+            Some(KeywordType::Let) => {
                 let name = self
                     .consume(1)
                     .expect("Expected identifier after `let`.")
@@ -73,58 +113,21 @@ impl Parser {
 
                 self.vars.push(name.value.clone());
 
-                let values = self
-                    .peek_until_semicolon()
-                    .unwrap_or_else(|| panic!("Expected expression after `let {} = `", name.value))
-                    .to_vec();
+                let next_token = self
+                    .consume(1)
+                    .unwrap_or_else(|| panic!("Expected token after `let {} = `", name.value))
+                    .clone();
 
-                let mut value = None;
+                let next_expr = self
+                    .parse_expr(&next_token)
+                    .unwrap_or_else(|| panic!("Expected expression after `let {} = `", name.value));
 
-                for v in &values {
-                    if let Some(expr) = self.parse_expr(v) {
-                        match expr {
-                            Expression::Add(_) => {
-                                value = Some(expr);
-                                break;
-                            }
-                            Expression::Number(_) => {
-                                if values
-                                    .iter()
-                                    .any(|token| token.token_type == TokenType::Plus)
-                                {
-                                    continue;
-                                }
-
-                                value = Some(expr);
-                                break;
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-
-                if value.is_none() {
-                    panic!("Expected expression after `let {} = `.", name.value);
-                }
-
-                self.vars.push(name.value.clone());
-
-                Some(Expression::Let(name, Box::new(value.unwrap())))
+                Some(Expression::Let(name, Box::new(next_expr)))
             }
-            TokenType::Plus => {
-                let tokens: Vec<Token> = self
-                    .consume_until_semicolon()
-                    .expect("Expected expression after '+'.")
-                    .iter()
-                    .filter(|token| token.token_type != TokenType::Plus)
-                    .cloned()
-                    .collect();
+            None => None,
+        };
 
-                Some(Expression::Add(tokens))
-            }
-            TokenType::Number => Some(Expression::Number(current_token.clone())),
-            TokenType::Identifer | TokenType::Operator | TokenType::SemiColon => None,
-        }
+        return_value
     }
 
     pub fn parse(mut self, tokens: Vec<Token>) -> NodeRoot {
@@ -147,28 +150,12 @@ impl Parser {
         root
     }
 
-    fn peek_until_semicolon(&self) -> Option<&[Token]> {
-        let first_semicolon_index = self
-            .tokens
-            .iter()
-            .position(|token| token.token_type == TokenType::SemiColon)?;
-
-        self.tokens.get(1 + self.index..first_semicolon_index)
-    }
-
-    fn consume_until_semicolon(&mut self) -> Option<&[Token]> {
-        let first_semicolon_index = self
-            .tokens
-            .iter()
-            .position(|token| token.token_type == TokenType::SemiColon)?;
-
-        let tokens = self.tokens.get(1 + self.index..first_semicolon_index);
-        self.index = first_semicolon_index;
-        tokens
+    fn peek(&self, amount: usize) -> Option<&Token> {
+        self.tokens.get(self.index + amount)
     }
 
     fn consume(&mut self, amount: usize) -> Option<&Token> {
         self.index += amount;
-        self.tokens.get(self.index)
+        self.peek(0)
     }
 }

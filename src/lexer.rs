@@ -4,17 +4,30 @@ use std::borrow::BorrowMut;
 pub enum TokenType {
     #[default]
     Identifer,
+    Keyword,
     Number,
     Operator,
-    Plus,
     SemiColon,
-    Exit,
+}
+
+#[derive(Default, PartialEq, Clone, Copy, Debug)]
+pub enum OperatorType {
+    #[default]
+    Plus,
+}
+
+#[derive(Default, PartialEq, Clone, Copy, Debug)]
+pub enum KeywordType {
+    #[default]
     Let,
+    Exit,
 }
 
 #[derive(Default, Clone)]
 pub struct Token {
     pub token_type: TokenType,
+    pub op_type: Option<OperatorType>,
+    pub keyword_type: Option<KeywordType>,
     pub value: String,
 }
 
@@ -49,7 +62,7 @@ impl Lexer {
                 }
 
                 if char == '+' {
-                    token.token_type = TokenType::Plus;
+                    token.op_type = Some(OperatorType::Plus);
                 }
 
                 token.value.push(char);
@@ -60,6 +73,7 @@ impl Lexer {
                 tokens.push(Token {
                     token_type: TokenType::SemiColon,
                     value: ';'.to_string(),
+                    ..Default::default()
                 });
             } else {
                 self.push_token(token, tokens.borrow_mut());
@@ -77,11 +91,15 @@ impl Lexer {
             return;
         }
 
-        token.token_type = match token.value.to_lowercase().as_str() {
-            "exit" => TokenType::Exit,
-            "let" => TokenType::Let,
-            _ => token.token_type,
+        token.keyword_type = match token.value.to_lowercase().as_str() {
+            "exit" => Some(KeywordType::Exit),
+            "let" => Some(KeywordType::Let),
+            _ => None,
         };
+
+        if token.keyword_type.is_some() {
+            token.token_type = TokenType::Keyword;
+        }
 
         tokens.push(token);
     }

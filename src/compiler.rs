@@ -11,46 +11,80 @@ pub struct Compiler {
     data_buffer: String,
     text_buffer: String,
 
-    vars: HashMap<String, Expression>,
+    vars: Vec<String>,
+    const_vars: HashMap<String, (String, i32)>,
 
     root: NodeRoot,
     index: usize,
 }
 
 impl Compiler {
+    fn add_const_var(&mut self, name: String, value: String, bit_size: i32) {
+        let size = match bit_size {
+            1 => 'b',
+            2 => 'w',
+            4 => 'd',
+            8 => 'q',
+            10 => 't',
+            16 => 'o',
+            32 => 'y',
+            64 => 'z',
+            _ => 'q',
+        };
+
+        self.data_buffer
+            .push_str(format!("    {} d{} {}\n", name, size, value).as_str());
+
+        self.const_vars.insert(name, (value, bit_size));
+    }
+
+    fn compile_expr_as_var(&mut self, expr: &Expression, var_name: String, sub_index: usize) {
+        match expr {
+            Expression::Number(token) => {
+                self.add_const_var(var_name, token.value.clone(), 8);
+            }
+            Expression::BinOp(expr1, _, expr2) => {
+                self.compile_expr_as_var(
+                    expr1,
+                    format!("{}_sub_{}", var_name, sub_index),
+                    sub_index + 1,
+                );
+
+                self.compile_expr_as_var(
+                    expr2,
+                    format!("{}_sub_{}", var_name, sub_index + 1),
+                    sub_index + 2,
+                );
+            }
+            _ => (),
+        }
+    }
+
     fn compile_expr(&mut self, expr: &Expression) {
         let text_buffer = &mut self.text_buffer;
-        let data_buffer = &mut self.data_buffer;
 
         match expr {
             Expression::Exit(tokens) => {
                 let exit_code_token = &tokens.first().unwrap();
 
                 if exit_code_token.token_type == TokenType::Identifer
-                    && self.vars.contains_key(&exit_code_token.value)
+                    && self
+                        .vars
+                        .iter()
+                        .any(|var| var.starts_with(&exit_code_token.value))
                 {
-                    let name = &exit_code_token.value;
-                    let var = self.vars.get(name).unwrap();
+                    let vars = self
+                        .const_vars
+                        .keys()
+                        .filter(|var| var.starts_with(&exit_code_token.value));
 
-                    match var {
-                        Expression::Add(tokens) => {
-                            text_buffer
-                                .push_str(format!("    mov rdi, [{}_add_0]\n", name).as_str());
-
-                            for i in 0..tokens.len() {
-                                if i == 0 {
-                                    continue;
-                                }
-
-                                text_buffer.push_str(
-                                    format!("    add rdi, [{}_add_{}]\n", name, i).as_str(),
-                                );
-                            }
+                    for (i, var) in vars.enumerate() {
+                        if i == 0 {
+                            text_buffer.push_str(format!("    mov rdi, [{}]\n", var).as_str());
+                            continue;
                         }
-                        Expression::Number(_) => {
-                            text_buffer.push_str(format!("    mov rdi, [{}]\n", name).as_str());
-                        }
-                        _ => unreachable!(),
+
+                        text_buffer.push_str(format!("    add rdi, [{}]\n", var).as_str());
                     }
                 } else {
                     text_buffer
@@ -62,24 +96,32 @@ impl Compiler {
             }
             Expression::Let(token, expr) => {
                 let name = &token.value;
+                let mut var_name = name.clone();
 
                 match expr.as_ref() {
-                    Expression::Add(tokens) => {
-                        for (i, token) in tokens.iter().enumerate() {
-                            data_buffer.push_str(
-                                format!("    {}_add_{} dq {}\n", name, i, token.value).as_str(),
-                            );
-                        }
+                    Expression::BinOp(expr1, op, expr2) => {
+                        self.compile_expr_as_var(
+                            expr1,
+                            format!("{}_{:?}_0", name, op.op_type.unwrap()),
+                            0,
+                        );
+                        self.compile_expr_as_var(
+                            expr2,
+                            format!("{}_{:?}_1", name, op.op_type.unwrap()),
+                            0,
+                        );
+
+                        var_name = format!("{}_{}", name, op.value);
                     }
-                    Expression::Number(token) => {
-                        data_buffer.push_str(format!("    {} dq {}\n", name, token.value).as_str());
+                    Expression::Number(_) => {
+                        self.compile_expr_as_var(expr, name.to_string(), 0);
                     }
                     _ => (),
                 }
 
-                self.vars.insert(name.to_string(), expr.as_ref().clone());
+                self.vars.push(var_name);
             }
-            Expression::Add(_) | Expression::Number(_) => (),
+            Expression::BinOp(..) | Expression::Number(_) => (),
         }
     }
 
