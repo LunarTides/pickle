@@ -37,11 +37,7 @@ impl Compiler {
                             text_buffer
                                 .push_str(format!("    mov rdi, [{}_add_0]\n", name).as_str());
 
-                            for (i, _) in tokens
-                                .iter()
-                                .filter(|token| token.token_type == TokenType::Number)
-                                .enumerate()
-                            {
+                            for i in 0..tokens.len() {
                                 if i == 0 {
                                     continue;
                                 }
@@ -69,11 +65,7 @@ impl Compiler {
 
                 match expr.as_ref() {
                     NodeExprs::Add(tokens) => {
-                        for (i, token) in tokens
-                            .iter()
-                            .filter(|token| token.token_type == TokenType::Number)
-                            .enumerate()
-                        {
+                        for (i, token) in tokens.iter().enumerate() {
                             data_buffer.push_str(
                                 format!("    {}_add_{} dq {}\n", name, i, token.value).as_str(),
                             );

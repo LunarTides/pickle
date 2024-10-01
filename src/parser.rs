@@ -112,11 +112,15 @@ impl Parser {
                 Some(NodeExprs::Let(name, Box::new(value.unwrap())))
             }
             TokenType::Plus => {
-                let tokens = self
+                let tokens: Vec<Token> = self
                     .consume_until_semicolon()
-                    .expect("Expected expression after '+'.");
+                    .expect("Expected expression after '+'.")
+                    .iter()
+                    .filter(|token| token.token_type != TokenType::Plus)
+                    .cloned()
+                    .collect();
 
-                Some(NodeExprs::Add(tokens.to_vec()))
+                Some(NodeExprs::Add(tokens))
             }
             TokenType::Number => Some(NodeExprs::Number(current_token.clone())),
             TokenType::Identifer | TokenType::Operator | TokenType::SemiColon => None,
