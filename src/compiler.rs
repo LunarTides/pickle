@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     lexer::TokenType,
-    parser::{NodeExprs, NodeRoot},
+    parser::{Expression, NodeRoot},
 };
 
 #[derive(Default)]
@@ -11,19 +11,19 @@ pub struct Compiler {
     data_buffer: String,
     text_buffer: String,
 
-    vars: HashMap<String, NodeExprs>,
+    vars: HashMap<String, Expression>,
 
     root: NodeRoot,
     index: usize,
 }
 
 impl Compiler {
-    fn compile_expr(&mut self, expr: &NodeExprs) {
+    fn compile_expr(&mut self, expr: &Expression) {
         let text_buffer = &mut self.text_buffer;
         let data_buffer = &mut self.data_buffer;
 
         match expr {
-            NodeExprs::Exit(tokens) => {
+            Expression::Exit(tokens) => {
                 let exit_code_token = &tokens.first().unwrap();
 
                 if exit_code_token.token_type == TokenType::Identifer
@@ -33,7 +33,7 @@ impl Compiler {
                     let var = self.vars.get(name).unwrap();
 
                     match var {
-                        NodeExprs::Add(tokens) => {
+                        Expression::Add(tokens) => {
                             text_buffer
                                 .push_str(format!("    mov rdi, [{}_add_0]\n", name).as_str());
 
@@ -47,7 +47,7 @@ impl Compiler {
                                 );
                             }
                         }
-                        NodeExprs::Number(_) => {
+                        Expression::Number(_) => {
                             text_buffer.push_str(format!("    mov rdi, [{}]\n", name).as_str());
                         }
                         _ => unreachable!(),
@@ -60,18 +60,18 @@ impl Compiler {
                 text_buffer.push_str("    mov rax, 60\n");
                 text_buffer.push_str("    syscall\n");
             }
-            NodeExprs::Let(token, expr) => {
+            Expression::Let(token, expr) => {
                 let name = &token.value;
 
                 match expr.as_ref() {
-                    NodeExprs::Add(tokens) => {
+                    Expression::Add(tokens) => {
                         for (i, token) in tokens.iter().enumerate() {
                             data_buffer.push_str(
                                 format!("    {}_add_{} dq {}\n", name, i, token.value).as_str(),
                             );
                         }
                     }
-                    NodeExprs::Number(token) => {
+                    Expression::Number(token) => {
                         data_buffer.push_str(format!("    {} dq {}\n", name, token.value).as_str());
                     }
                     _ => (),
@@ -79,7 +79,7 @@ impl Compiler {
 
                 self.vars.insert(name.to_string(), expr.as_ref().clone());
             }
-            NodeExprs::Add(_) | NodeExprs::Number(_) => (),
+            Expression::Add(_) | Expression::Number(_) => (),
         }
     }
 

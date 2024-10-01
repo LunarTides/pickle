@@ -1,22 +1,22 @@
 use crate::lexer::{Token, TokenType};
 
 #[derive(Clone)]
-pub enum NodeExprs {
+pub enum Expression {
     Exit(Vec<Token>),
-    Let(Token, Box<NodeExprs>),
+    Let(Token, Box<Expression>),
     Number(Token),
     Add(Vec<Token>),
 }
 
-impl Default for NodeExprs {
+impl Default for Expression {
     fn default() -> Self {
-        NodeExprs::Exit(Vec::default())
+        Expression::Exit(Vec::default())
     }
 }
 
 #[derive(Default)]
 pub struct NodeStmt {
-    pub expr: NodeExprs,
+    pub expr: Expression,
 }
 
 #[derive(Default)]
@@ -32,7 +32,7 @@ pub struct Parser {
 }
 
 impl Parser {
-    fn parse_expr(&mut self, current_token: &Token) -> Option<NodeExprs> {
+    fn parse_expr(&mut self, current_token: &Token) -> Option<Expression> {
         match current_token.token_type {
             TokenType::Exit => {
                 let exit_code = self
@@ -50,7 +50,7 @@ impl Parser {
                     );
                 }
 
-                Some(NodeExprs::Exit(vec![exit_code]))
+                Some(Expression::Exit(vec![exit_code]))
             }
             TokenType::Let => {
                 let name = self
@@ -83,11 +83,11 @@ impl Parser {
                 for v in &values {
                     if let Some(expr) = self.parse_expr(v) {
                         match expr {
-                            NodeExprs::Add(_) => {
+                            Expression::Add(_) => {
                                 value = Some(expr);
                                 break;
                             }
-                            NodeExprs::Number(_) => {
+                            Expression::Number(_) => {
                                 if values
                                     .iter()
                                     .any(|token| token.token_type == TokenType::Plus)
@@ -109,7 +109,7 @@ impl Parser {
 
                 self.vars.push(name.value.clone());
 
-                Some(NodeExprs::Let(name, Box::new(value.unwrap())))
+                Some(Expression::Let(name, Box::new(value.unwrap())))
             }
             TokenType::Plus => {
                 let tokens: Vec<Token> = self
@@ -120,9 +120,9 @@ impl Parser {
                     .cloned()
                     .collect();
 
-                Some(NodeExprs::Add(tokens))
+                Some(Expression::Add(tokens))
             }
-            TokenType::Number => Some(NodeExprs::Number(current_token.clone())),
+            TokenType::Number => Some(Expression::Number(current_token.clone())),
             TokenType::Identifer | TokenType::Operator | TokenType::SemiColon => None,
         }
     }
