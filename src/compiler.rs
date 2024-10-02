@@ -11,15 +11,23 @@ pub struct Compiler {
     data_buffer: String,
     text_buffer: String,
 
-    vars: Vec<String>,
-    const_vars: HashMap<String, (String, Token, i32)>,
+    const_vars: HashMap<String, (String, Option<Token>, i32)>,
+    const_var_last_seen_operator: OperatorType,
+    const_var_operator_occurrences: HashMap<OperatorType, usize>,
+    const_var_chain_index: usize,
 
     root: NodeRoot,
     index: usize,
 }
 
 impl Compiler {
-    fn add_const_var(&mut self, name: String, value: String, operator: Token, bit_size: i32) {
+    fn add_const_var(
+        &mut self,
+        name: String,
+        value: String,
+        operator: Option<Token>,
+        bit_size: i32,
+    ) {
         let size = match bit_size {
             1 => 'b',
             2 => 'w',
@@ -42,27 +50,62 @@ impl Compiler {
         &mut self,
         expr: &Expression,
         var_name: String,
-        operator: Token,
-        sub_index: usize,
+        operator: Option<Token>,
     ) {
+        if let Some(operator) = operator.clone() {
+            let op_type = operator.op_type.unwrap();
+
+            if op_type == self.const_var_last_seen_operator {
+                self.const_var_chain_index += 1;
+            } else {
+                let record = self.const_var_operator_occurrences.get_mut(&op_type);
+
+                if let Some(record) = record {
+                    *record += 1;
+                } else {
+                    self.const_var_operator_occurrences.insert(op_type, 0);
+                }
+
+                self.const_var_chain_index = 0;
+            }
+
+            self.const_var_last_seen_operator = op_type;
+        }
+
         match expr {
             Expression::Number(token) => {
-                self.add_const_var(var_name, token.value.clone(), operator, 8);
+                let actual_var_name = if let Some(ref op) = operator {
+                    let occurrence = self
+                        .const_var_operator_occurrences
+                        .get(&op.op_type.unwrap())
+                        .unwrap_or(&0);
+
+                    format!(
+                        "{}_{:?}_{}_{}",
+                        var_name,
+                        op.op_type.unwrap(),
+                        occurrence,
+                        self.const_var_chain_index
+                    )
+                } else {
+                    var_name.clone()
+                };
+
+                self.add_const_var(actual_var_name, token.value.clone(), operator, 8);
             }
             Expression::BinOp(expr1, op, expr2) => {
-                self.compile_expr_as_var(
-                    expr1,
-                    format!("{}_sub_{}", var_name, sub_index),
-                    op.clone(),
-                    sub_index + 1,
-                );
+                let expr2_op = if let Some(operator) = operator {
+                    if op.op_type.unwrap() == OperatorType::Multiply {
+                        Some(op.clone())
+                    } else {
+                        Some(operator)
+                    }
+                } else {
+                    operator
+                };
 
-                self.compile_expr_as_var(
-                    expr2,
-                    format!("{}_sub_{}", var_name, sub_index + 1),
-                    operator,
-                    sub_index + 2,
-                );
+                self.compile_expr_as_var(expr2, var_name.clone(), expr2_op);
+                self.compile_expr_as_var(expr1, var_name, Some(op.clone()));
             }
             _ => (),
         }
@@ -77,33 +120,87 @@ impl Compiler {
 
                 if exit_code_token.token_type == TokenType::Identifer
                     && self
-                        .vars
-                        .iter()
-                        .any(|var| var.starts_with(&exit_code_token.value))
-                {
-                    let vars = self
                         .const_vars
                         .keys()
-                        .filter(|var| var.starts_with(&exit_code_token.value));
+                        .any(|var| var.starts_with(&exit_code_token.value))
+                {
+                    let mut vars = self
+                        .const_vars
+                        .keys()
+                        .filter(|var| var.starts_with(&exit_code_token.value))
+                        .collect::<Vec<_>>();
+
+                    vars.sort();
+
+                    let mut vars = vars.into_iter();
+
+                    let mut last_operator_type = OperatorType::default();
+                    let mut chain_index = 0;
 
                     text_buffer.push_str("    xor rdi, rdi\n");
 
-                    for var_name in vars {
+                    while let Some(var_name) = vars.next() {
                         let (_, operator, _) = self.const_vars.get(var_name).unwrap();
+                        if operator.is_none() {
+                            text_buffer.push_str(format!("    mov rdi, [{}]\n", var_name).as_str());
+                            break;
+                        }
+
+                        let operator = operator.clone().unwrap();
+
                         if operator.token_type != TokenType::Operator {
                             panic!("Expected operator when compiling.");
                         }
 
-                        let op_name = match operator.op_type {
-                            Some(OperatorType::Plus) => "add",
-                            Some(OperatorType::Minus) => "sub",
+                        if let Some(op_type) = operator.op_type {
+                            if op_type == last_operator_type {
+                                chain_index += 1;
+                            } else {
+                                chain_index = 0;
+
+                                if last_operator_type == OperatorType::Multiply {
+                                    text_buffer.push_str("    add rdi, rax\n");
+                                }
+                            }
+                        }
+
+                        last_operator_type = operator.op_type.unwrap_or_default();
+
+                        match operator.op_type {
+                            Some(OperatorType::Plus) => {
+                                text_buffer
+                                    .push_str(format!("    add rdi, [{}]\n", var_name).as_str());
+                            }
+                            Some(OperatorType::Minus) => {
+                                text_buffer
+                                    .push_str(format!("    sub rdi, [{}]\n", var_name).as_str());
+                            }
+                            Some(OperatorType::Multiply) => {
+                                if chain_index == 0 {
+                                    text_buffer.push_str(
+                                        format!("    mov rax, [{}]\n", var_name).as_str(),
+                                    );
+                                    text_buffer.push_str(
+                                        format!("    mov rbx, [{}]\n", vars.next().unwrap())
+                                            .as_str(),
+                                    );
+                                    text_buffer.push_str("    imul rbx\n");
+                                } else {
+                                    text_buffer.push_str(
+                                        format!("    mov rbx, [{}]\n", var_name).as_str(),
+                                    );
+                                    text_buffer.push_str("    imul rbx\n");
+                                }
+
+                                if vars.len() == 0 {
+                                    text_buffer.push_str("    add rdi, rax\n");
+                                }
+                            }
+                            Some(OperatorType::Equals) => unreachable!(),
                             None => {
                                 panic!("Invalid operator type.");
                             }
                         };
-
-                        text_buffer
-                            .push_str(format!("    {} rdi, [{}]\n", op_name, var_name).as_str());
                     }
                 } else {
                     text_buffer
@@ -115,32 +212,17 @@ impl Compiler {
             }
             Expression::Let(token, expr) => {
                 let name = &token.value;
-                let mut var_name = name.clone();
 
                 match expr.as_ref() {
                     Expression::BinOp(expr1, op, expr2) => {
-                        self.compile_expr_as_var(
-                            expr1,
-                            format!("{}_{:?}_0", name, op.op_type.unwrap()),
-                            op.clone(),
-                            0,
-                        );
-                        self.compile_expr_as_var(
-                            expr2,
-                            format!("{}_{:?}_1", name, op.op_type.unwrap()),
-                            op.clone(),
-                            0,
-                        );
-
-                        var_name = format!("{}_{}", name, op.value);
+                        self.compile_expr_as_var(expr1, name.to_string(), Some(op.clone()));
+                        self.compile_expr_as_var(expr2, name.to_string(), Some(op.clone()));
                     }
                     Expression::Number(_) => {
-                        self.compile_expr_as_var(expr, name.to_string(), Token::default(), 0);
+                        self.compile_expr_as_var(expr, name.to_string(), None);
                     }
                     _ => (),
                 }
-
-                self.vars.push(var_name);
             }
             Expression::BinOp(..) | Expression::Number(_) => (),
         }
@@ -151,8 +233,6 @@ impl Compiler {
 
         self.data_buffer = "\nsection .data\n".to_string();
         self.text_buffer = "\nsection .text\n_start:\n".to_string();
-
-        self.vars.clear();
 
         self.root = root;
         self.index = 0;

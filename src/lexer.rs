@@ -10,11 +10,13 @@ pub enum TokenType {
     SemiColon,
 }
 
-#[derive(Default, PartialEq, Clone, Copy, Debug)]
+#[derive(Default, PartialEq, Clone, Copy, Debug, Eq, Hash)]
 pub enum OperatorType {
     #[default]
+    Equals,
     Plus,
     Minus,
+    Multiply,
 }
 
 #[derive(Default, PartialEq, Clone, Copy, Debug)]
@@ -62,13 +64,15 @@ impl Lexer {
                     token.token_type = TokenType::Operator;
                 }
 
-                if char == '+' {
-                    token.op_type = Some(OperatorType::Plus);
-                } else if char == '-' {
-                    token.op_type = Some(OperatorType::Minus);
-                } else if char != '=' {
-                    panic!("Operator '{}' is not yet implemented.", char);
-                }
+                token.op_type = match char {
+                    '+' => Some(OperatorType::Plus),
+                    '-' => Some(OperatorType::Minus),
+                    '*' => Some(OperatorType::Multiply),
+                    '=' => Some(OperatorType::Equals),
+                    _ => {
+                        panic!("Operator '{}' is not yet implemented.", char);
+                    }
+                };
 
                 token.value.push(char);
             } else if char == ';' {
