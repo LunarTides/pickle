@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    lexer::TokenType,
+    lexer::{OperatorType, Token, TokenType},
     parser::{Expression, NodeRoot},
 };
 
@@ -12,14 +12,14 @@ pub struct Compiler {
     text_buffer: String,
 
     vars: Vec<String>,
-    const_vars: HashMap<String, (String, i32)>,
+    const_vars: HashMap<String, (String, Token, i32)>,
 
     root: NodeRoot,
     index: usize,
 }
 
 impl Compiler {
-    fn add_const_var(&mut self, name: String, value: String, bit_size: i32) {
+    fn add_const_var(&mut self, name: String, value: String, operator: Token, bit_size: i32) {
         let size = match bit_size {
             1 => 'b',
             2 => 'w',
@@ -35,24 +35,32 @@ impl Compiler {
         self.data_buffer
             .push_str(format!("    {} d{} {}\n", name, size, value).as_str());
 
-        self.const_vars.insert(name, (value, bit_size));
+        self.const_vars.insert(name, (value, operator, bit_size));
     }
 
-    fn compile_expr_as_var(&mut self, expr: &Expression, var_name: String, sub_index: usize) {
+    fn compile_expr_as_var(
+        &mut self,
+        expr: &Expression,
+        var_name: String,
+        operator: Token,
+        sub_index: usize,
+    ) {
         match expr {
             Expression::Number(token) => {
-                self.add_const_var(var_name, token.value.clone(), 8);
+                self.add_const_var(var_name, token.value.clone(), operator, 8);
             }
-            Expression::BinOp(expr1, _, expr2) => {
+            Expression::BinOp(expr1, op, expr2) => {
                 self.compile_expr_as_var(
                     expr1,
                     format!("{}_sub_{}", var_name, sub_index),
+                    op.clone(),
                     sub_index + 1,
                 );
 
                 self.compile_expr_as_var(
                     expr2,
                     format!("{}_sub_{}", var_name, sub_index + 1),
+                    operator,
                     sub_index + 2,
                 );
             }
@@ -78,13 +86,24 @@ impl Compiler {
                         .keys()
                         .filter(|var| var.starts_with(&exit_code_token.value));
 
-                    for (i, var) in vars.enumerate() {
-                        if i == 0 {
-                            text_buffer.push_str(format!("    mov rdi, [{}]\n", var).as_str());
-                            continue;
+                    text_buffer.push_str("    xor rdi, rdi\n");
+
+                    for var_name in vars {
+                        let (_, operator, _) = self.const_vars.get(var_name).unwrap();
+                        if operator.token_type != TokenType::Operator {
+                            panic!("Expected operator when compiling.");
                         }
 
-                        text_buffer.push_str(format!("    add rdi, [{}]\n", var).as_str());
+                        let op_name = match operator.op_type {
+                            Some(OperatorType::Plus) => "add",
+                            Some(OperatorType::Minus) => "sub",
+                            None => {
+                                panic!("Invalid operator type.");
+                            }
+                        };
+
+                        text_buffer
+                            .push_str(format!("    {} rdi, [{}]\n", op_name, var_name).as_str());
                     }
                 } else {
                     text_buffer
@@ -103,18 +122,20 @@ impl Compiler {
                         self.compile_expr_as_var(
                             expr1,
                             format!("{}_{:?}_0", name, op.op_type.unwrap()),
+                            op.clone(),
                             0,
                         );
                         self.compile_expr_as_var(
                             expr2,
                             format!("{}_{:?}_1", name, op.op_type.unwrap()),
+                            op.clone(),
                             0,
                         );
 
                         var_name = format!("{}_{}", name, op.value);
                     }
                     Expression::Number(_) => {
-                        self.compile_expr_as_var(expr, name.to_string(), 0);
+                        self.compile_expr_as_var(expr, name.to_string(), Token::default(), 0);
                     }
                     _ => (),
                 }

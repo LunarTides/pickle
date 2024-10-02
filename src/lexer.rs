@@ -14,6 +14,7 @@ pub enum TokenType {
 pub enum OperatorType {
     #[default]
     Plus,
+    Minus,
 }
 
 #[derive(Default, PartialEq, Clone, Copy, Debug)]
@@ -63,6 +64,10 @@ impl Lexer {
 
                 if char == '+' {
                     token.op_type = Some(OperatorType::Plus);
+                } else if char == '-' {
+                    token.op_type = Some(OperatorType::Minus);
+                } else if char != '=' {
+                    panic!("Operator '{}' is not yet implemented.", char);
                 }
 
                 token.value.push(char);
