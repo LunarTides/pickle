@@ -112,7 +112,11 @@ impl Compiler {
     }
 
     fn compile_expr(&mut self, expr: &Expression) {
-        let text_buffer = &mut self.text_buffer;
+        macro_rules! add_text {
+            ($($args:expr),*) => {
+                self.text_buffer.push_str(format!("    {}\n", format!($($args),*)).as_str());
+            };
+        }
 
         match expr {
             Expression::Exit(tokens) => {
@@ -137,12 +141,12 @@ impl Compiler {
                     let mut last_operator_type = OperatorType::default();
                     let mut chain_index = 0;
 
-                    text_buffer.push_str("    xor rdi, rdi\n");
+                    add_text!("xor rdi, rdi");
 
                     while let Some(var_name) = vars.next() {
                         let (_, operator, _) = self.const_vars.get(var_name).unwrap();
                         if operator.is_none() {
-                            text_buffer.push_str(format!("    mov rdi, [{}]\n", var_name).as_str());
+                            add_text!("mov rdi, [{}]", var_name);
                             break;
                         }
 
@@ -159,7 +163,7 @@ impl Compiler {
                                 chain_index = 0;
 
                                 if last_operator_type == OperatorType::Multiply {
-                                    text_buffer.push_str("    add rdi, rax\n");
+                                    add_text!("add rdi, rax");
                                 }
                             }
                         }
@@ -168,32 +172,23 @@ impl Compiler {
 
                         match operator.op_type {
                             Some(OperatorType::Plus) => {
-                                text_buffer
-                                    .push_str(format!("    add rdi, [{}]\n", var_name).as_str());
+                                add_text!("add rdi, [{}]", var_name);
                             }
                             Some(OperatorType::Minus) => {
-                                text_buffer
-                                    .push_str(format!("    sub rdi, [{}]\n", var_name).as_str());
+                                add_text!("sub rdi, [{}]", var_name);
                             }
                             Some(OperatorType::Multiply) => {
                                 if chain_index == 0 {
-                                    text_buffer.push_str(
-                                        format!("    mov rax, [{}]\n", var_name).as_str(),
-                                    );
-                                    text_buffer.push_str(
-                                        format!("    mov rbx, [{}]\n", vars.next().unwrap())
-                                            .as_str(),
-                                    );
-                                    text_buffer.push_str("    imul rbx\n");
+                                    add_text!("mov rax, [{}]", var_name);
+                                    add_text!("mov rbx, [{}]", vars.next().unwrap());
                                 } else {
-                                    text_buffer.push_str(
-                                        format!("    mov rbx, [{}]\n", var_name).as_str(),
-                                    );
-                                    text_buffer.push_str("    imul rbx\n");
+                                    add_text!("mov rbx, [{}]", var_name);
                                 }
 
+                                add_text!("imul rbx");
+
                                 if vars.len() == 0 {
-                                    text_buffer.push_str("    add rdi, rax\n");
+                                    add_text!("add rdi, rax");
                                 }
                             }
                             Some(OperatorType::Equals) => unreachable!(),
@@ -203,12 +198,11 @@ impl Compiler {
                         };
                     }
                 } else {
-                    text_buffer
-                        .push_str(format!("    mov rdi, {}\n", exit_code_token.value).as_str());
+                    add_text!("mov rdi, {}", exit_code_token.value);
                 }
 
-                text_buffer.push_str("    mov rax, 60\n");
-                text_buffer.push_str("    syscall\n");
+                add_text!("mov rax, 60");
+                add_text!("syscall");
             }
             Expression::Let(token, expr) => {
                 let name = &token.value;
